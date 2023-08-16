@@ -17,7 +17,7 @@ library("odbc")
 #### Load Data 
 
 ```{r cars}
-conn = dbConnect(odbc() ,DSN="CAPITAL-IQ",database='QIAR_Test',uid='QIARApp',pwd='November2019*',port=1433)
+conn = dbConnect(odbc() ,DSN="CA***Q",database='Q***est',uid='Qpp',pwd='*',port=1433)
 # Value Stocks
 query <- "SELECT * FROM [QIAR_TEST].[dbo].[daily_value_stock_returns] ORDER BY pricingDate asc"
 stock_returns <- dbGetQuery(conn, query)
