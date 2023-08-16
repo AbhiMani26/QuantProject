@@ -1,0 +1,532 @@
+---
+title: "Project"
+output: html_document
+date: "2023-08-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(corrplot)
+library(tidyverse)
+library(PerformanceAnalytics)
+library("odbc")
+
+```
+
+
+#### Load Data 
+
+```{r cars}
+conn = dbConnect(odbc() ,DSN="CAPITAL-IQ",database='QIAR_Test',uid='QIARApp',pwd='November2019*',port=1433)
+# Value Stocks
+query <- "SELECT * FROM [QIAR_TEST].[dbo].[daily_value_stock_returns] ORDER BY pricingDate asc"
+stock_returns <- dbGetQuery(conn, query)
+# Close the connection
+stock_returns <- stock_returns[-(1:1),]
+
+# Growth Stocks
+query2 <- "SELECT * FROM [QIAR_TEST].[dbo].[daily_growth_stock_returns] ORDER BY pricingDate asc"
+growth_stock_returns <- dbGetQuery(conn,query2)
+growth_stock_returns <- growth_stock_returns[-(1:1),]
+
+#Dividend Stocks
+query6 <-"select * from [QIAR_TEST].[dbo].[daily_div_stock_returns] order by pricingDate asc"
+div_stock_returns <- dbGetQuery(conn,query6)
+div_stock_returns <- div_stock_returns[-(1:1),]
+
+#Financial Stocks
+query8 <- "select * from [QIAR_TEST].[dbo].[daily_fin_stock_returns] order by pricingDate asc"
+fin_stock_returns <- dbGetQuery(conn,query8)
+fin_stock_returns <- fin_stock_returns[-(1:1),]
+
+#Capital Stocks
+query10 <- "select * from [QIAR_TEST].[dbo].[daily_cap_stock_returns] order by pricingDate asc"
+cap_stock_returns <- dbGetQuery(conn,query10)
+cap_stock_returns <- cap_stock_returns[-(1:1),]
+
+#Value factor Data
+query4 <- "SELECT [valueDate],[value]
+  FROM [Xpressfeed].[dbo].[ciqIndexValue] where tradingItemId=2644245 and dataItemId=112099 and valueDate >= DATEADD(Month,-3,GETDATE()) order by valueDate desc"
+value_returns <- dbGetQuery(conn,query4)
+
+#Growth factor data
+query3 <- "SELECT [valueDate],[value]
+  FROM [Xpressfeed].[dbo].[ciqIndexValue] where tradingItemId=2644243 and dataItemId=112099 and valueDate >= DATEADD(Month,-3,GETDATE()) order by valueDate desc"
+growth_returns <- dbGetQuery(conn,query3)
+
+#S&P Index Data
+query5 <- "SELECT [valueDate],[value]
+  FROM [Xpressfeed].[dbo].[ciqIndexValue] where tradingItemId=2633671 and dataItemId=112099 and valueDate >= DATEADD(Month,-3,GETDATE()) order by valueDate desc"
+snp_returns <- dbGetQuery(conn,query5)
+
+#Dividend Factor data
+query7 <- "SELECT [valueDate],[value]
+  FROM [Xpressfeed].[dbo].[ciqIndexValue] where tradingItemId=50873350 and dataItemId=112099 and valueDate >= DATEADD(Month,-3,GETDATE()) order by valueDate desc"
+div_returns <- dbGetQuery(conn,query7)
+
+#Financial Factor Data
+query9 <- "SELECT [valueDate],[value]
+  FROM [Xpressfeed].[dbo].[ciqIndexValue] where tradingItemId=2653595 and dataItemId=112099 and valueDate >= DATEADD(Month,-3,GETDATE()) order by valueDate desc"
+fin_returns <- dbGetQuery(conn,query9)
+
+#Financial Factor Data
+query11 <- "SELECT [valueDate],[value]
+  FROM [Xpressfeed].[dbo].[ciqIndexValue] where tradingItemId=534993233 and dataItemId=112099 and valueDate >= DATEADD(Month,-3,GETDATE()) order by valueDate desc"
+cap_returns <- dbGetQuery(conn,query9)
+
+dbDisconnect(conn)
+```
+
+```{r}
+# value Factor Data
+colnames(value_returns)[c(1, 2)] <- c("Date", "closePrice")
+value_returns <- value_returns %>%
+  arrange(Date) %>%
+  mutate(prevPrice = lag(closePrice, 1),
+         dailyReturn = (closePrice - prevPrice) / prevPrice)
+value_returns <- value_returns[-(1:1),]
+
+#Growth Factor data
+colnames(growth_returns)[c(1, 2)] <- c("Date", "closePrice")
+growth_returns <- growth_returns %>%
+  arrange(Date) %>%
+  mutate(prevPrice = lag(closePrice, 1),
+         dailyReturn = (closePrice - prevPrice) / prevPrice)
+growth_returns <- growth_returns[-(1:1),]
+
+# S&P500 Index Data
+colnames(snp_returns)[c(1, 2)] <- c("Date", "closePrice")
+snp_returns <- snp_returns %>%
+  arrange(Date) %>%
+  mutate(prevPrice = lag(closePrice, 1),
+         dailyReturn = (closePrice - prevPrice) / prevPrice)
+snp_returns <- snp_returns[-(1:1),]
+
+#Dividend Factor Data
+colnames(div_returns)[c(1, 2)] <- c("Date", "closePrice")
+div_returns <- div_returns %>%
+  arrange(Date) %>%
+  mutate(prevPrice = lag(closePrice, 1),
+         dailyReturn = (closePrice - prevPrice) / prevPrice)
+div_returns <- div_returns[-(1:1),]
+
+#Financial Factor Data
+colnames(fin_returns)[c(1, 2)] <- c("Date", "closePrice")
+fin_returns <- fin_returns %>%
+  arrange(Date) %>%
+  mutate(prevPrice = lag(closePrice, 1),
+         dailyReturn = (closePrice - prevPrice) / prevPrice)
+fin_returns <- fin_returns[-(1:1),]
+
+#Quality Factor Data
+colnames(cap_returns)[c(1, 2)] <- c("Date", "closePrice")
+cap_returns <- cap_returns %>%
+  arrange(Date) %>%
+  mutate(prevPrice = lag(closePrice, 1),
+         dailyReturn = (closePrice - prevPrice) / prevPrice)
+cap_returns <- cap_returns[-(1:1),]
+```
+
+### Sharpe Ratio Value Strategy
+
+```{r echo=FALSE}
+# 1. Calculate Average Return for each stock and then the overall average for top 100 stocks
+stock_returns <- stock_returns[,-(1:1)]
+avg_stock_returns <- colMeans(stock_returns, na.rm = TRUE)
+overall_avg_stock_return <- mean(avg_stock_returns)
+
+avg_value_return <- mean(value_returns$dailyReturn, na.rm = TRUE)
+
+# 2. Benchmark Comparison
+avg_snp_return <- mean(snp_returns$dailyReturn, na.rm = TRUE)
+
+# 3. Risk-Adjusted Performance (Sharpe Ratio)
+# Assuming a risk-free rate of 0.001 (0.1% monthly, but you can adjust this)
+risk_free_rate <- 0.001
+
+sharpe_stocks <- (avg_stock_returns - risk_free_rate) / apply(stock_returns, 2, sd, na.rm = TRUE)
+overall_sharpe_stock <- mean(sharpe_stocks)
+
+sharpe_value <- (avg_value_return - risk_free_rate) / sd(value_returns$dailyReturn, na.rm = TRUE)
+
+cat("Sharpe Ratio of Top 50 Value Strategy Stocks:", overall_sharpe_stock, "\n")
+cat("Sharpe Ratio of Value Factor:", sharpe_value, "\n")
+```
+#### Performance Comparison Value Strategy
+```{r}
+# 5. Visual Representation
+cumulative_stocks <- t(apply(stock_returns + 1, 1, cumprod)) - 1
+overall_cumulative_stock <- rowMeans(cumulative_stocks)
+
+cumulative_value <- cumprod(1 + value_returns$dailyReturn) - 1
+cumulative_snp <- cumprod(1 + snp_returns$dailyReturn) - 1
+
+plot(overall_cumulative_stock, type = "l", col = "blue", ylim = c(min(c(overall_cumulative_stock, cumulative_value, cumulative_snp)), max(c(overall_cumulative_stock, cumulative_value, cumulative_snp))), xlab = "Time", ylab = "Cumulative Return", main = "Performance Comparison")
+lines(cumulative_value, col = "red")
+lines(cumulative_snp, col = "green")
+legend("topright", legend = c("Top 50 Stocks", "Value Factor", "S&P 500"), fill = c("blue", "red", "green"))
+
+# Print results
+cat("Average Return of Top 50 Stocks:", overall_avg_stock_return, "\n")
+cat("Average Return of Value Factor:", avg_value_return, "\n")
+cat("Average Return of S&P 500:", avg_snp_return, "\n")
+```
+
+```{r}
+portfolio_daily_returns <- rowSums(stock_returns) / 50
+
+# Perform the t-test
+t_test <- t.test(portfolio_daily_returns, value_returns$dailyReturn)
+cat("T-test Results:", t_test$p.value, "\n")
+
+# Calculate rolling standard deviation (volatility) for a window of, say, 5 days (you can adjust this)
+rolling_volatility_portfolio <- rollapply(portfolio_daily_returns, width = 5, FUN = sd, align = "right", fill = NA)
+rolling_volatility_value <- rollapply(value_returns$dailyReturn, width = 5, FUN = sd, align = "right", fill = NA)
+
+# Plot the volatilities
+plot(rolling_volatility_portfolio, type = "l", col = "blue", 
+     ylim = c(min(c(rolling_volatility_portfolio, rolling_volatility_value), na.rm = TRUE), 
+         max(c(rolling_volatility_portfolio, rolling_volatility_value), na.rm = TRUE))
+,
+     xlab = "Time", ylab = "Volatility", main = "Volatility Comparison")
+lines(rolling_volatility_value, col = "red")
+legend("topright", legend = c("Top 50 Stocks", "Value Factor"), fill = c("blue", "red"))
+```
+
+```{r}
+combined_returns <- data.frame(
+  Top50Stocks = portfolio_daily_returns,
+  ValueFactor = value_returns$dailyReturn,
+  SNP500 = snp_returns$dailyReturn
+)
+cor_matrix <- cor(combined_returns, use = "complete.obs")
+print(cor_matrix)
+# Create the correlation plot
+corrplot(cor_matrix, method = "circle")
+```
+
+
+
+
+
+
+### Sharpe Ratio Growth Strategy
+
+```{r echo=FALSE}
+# 1. Calculate Average Return for each stock and then the overall average for top 100 stocks
+growth_stock_returns <- growth_stock_returns[,-(1:1)]
+avg_growth_stock_returns <- colMeans(growth_stock_returns, na.rm = TRUE)
+overall_avg_growth_stock_returns <- mean(avg_growth_stock_returns)
+
+
+
+avg_growth_return <- mean(growth_returns$dailyReturn, na.rm = TRUE)
+
+# 3. Risk-Adjusted Performance (Sharpe Ratio)
+# Assuming a risk-free rate of 0.001 (0.1% monthly, but you can adjust this)
+risk_free_rate <- 0.001
+
+sharpe_growth_stocks <- (avg_growth_stock_returns - risk_free_rate) / apply(growth_stock_returns, 2, sd, na.rm = TRUE)
+overall_sharpe_stock <- mean(sharpe_growth_stocks)
+
+sharpe_growth <- (avg_growth_return - risk_free_rate) / sd(growth_returns$dailyReturn, na.rm = TRUE)
+
+cat("Sharpe Ratio of Top 50 Growth Stocks:", overall_sharpe_stock, "\n")
+cat("Sharpe Ratio of Growth Factor:", sharpe_growth, "\n")
+```
+
+
+#### Performance Comparison Growth Strategy
+```{r}
+# 5. Visual Representation
+cumulative_growth_stocks <- t(apply(growth_stock_returns + 1, 1, cumprod)) - 1
+overall_cumulative_stock <- rowMeans(cumulative_growth_stocks)
+
+cumulative_growth <- cumprod(1 + growth_returns$dailyReturn) - 1
+
+plot(overall_cumulative_stock, type = "l", col = "blue", ylim = c(min(c(overall_cumulative_stock, cumulative_growth, cumulative_snp)), max(c(overall_cumulative_stock, cumulative_growth, cumulative_snp))), xlab = "Time", ylab = "Cumulative Return", main = "Performance Comparison")
+lines(cumulative_growth, col = "red")
+lines(cumulative_snp, col = "green")
+legend("topright", legend = c("Top 50 Growth Stocks", "Growth Factor", "S&P 500"), fill = c("blue", "red", "green"))
+
+# Print results
+cat("Average Return of Top 50 Growth Stocks:", overall_avg_growth_stock_returns, "\n")
+cat("Average Return of growth Factor:", avg_growth_return, "\n")
+cat("Average Return of S&P 500:", avg_snp_return, "\n")
+```
+
+### Growth Stocks Rolling Volitality Stocks
+```{r}
+portfolio_growth_daily_returns <- rowSums(growth_stock_returns) / 50
+
+# Perform the t-test
+t_test <- t.test(portfolio_growth_daily_returns, growth_returns$dailyReturn)
+cat("T-test Results:", t_test$p.value, "\n")
+
+# Calculate rolling standard deviation (volatility) for a window of, say, 5 days (you can adjust this)
+rolling_volatility_portfolio <- rollapply(portfolio_growth_daily_returns, width = 5, FUN = sd, align = "right", fill = NA)
+rolling_volatility_growth <- rollapply(growth_returns$dailyReturn, width = 5, FUN = sd, align = "right", fill = NA)
+
+# Plot the volatilities
+plot(rolling_volatility_portfolio, type = "l", col = "blue", 
+     ylim = c(min(c(rolling_volatility_portfolio, rolling_volatility_growth), na.rm = TRUE), 
+         max(c(rolling_volatility_portfolio, rolling_volatility_growth), na.rm = TRUE))
+,
+     xlab = "Time", ylab = "Volatility", main = "Volatility Comparison")
+lines(rolling_volatility_growth, col = "red")
+legend("topright", legend = c("Top 50 Growth Stocks", "Growth Factor"), fill = c("blue", "red"))
+```
+
+```{r}
+combined_returns <- data.frame(
+  Top50GrowthStocks = portfolio_growth_daily_returns,
+  GrowthFactor = growth_returns$dailyReturn,
+  SNP500 = snp_returns$dailyReturn
+)
+
+cor_matrix <- cor(combined_returns, use = "complete.obs")
+print(cor_matrix)
+# Create the correlation plot
+corrplot(cor_matrix, method = "circle")
+```
+
+### Sharpe Ratio Dividend Strategy
+
+```{r echo=FALSE}
+# 1. Calculate Average Return for each stock and then the overall average for top 100 stocks
+div_stock_returns <- div_stock_returns[,-(1:1)]
+avg_div_stock_returns <- colMeans(div_stock_returns, na.rm = TRUE)
+overall_avg_div_stock_returns <- mean(avg_div_stock_returns)
+
+
+
+avg_div_return <- mean(div_returns$dailyReturn, na.rm = TRUE)
+
+# 3. Risk-Adjusted Performance (Sharpe Ratio)
+# Assuming a risk-free rate of 0.001 (0.1% monthly, but you can adjust this)
+risk_free_rate <- 0.001
+
+sharpe_div_stocks <- (avg_div_stock_returns - risk_free_rate) / apply(div_stock_returns, 2, sd, na.rm = TRUE)
+overall_sharpe_stock <- mean(sharpe_div_stocks)
+
+sharpe_div <- (avg_div_return - risk_free_rate) / sd(div_returns$dailyReturn, na.rm = TRUE)
+
+cat("Sharpe Ratio of Top 50 Dividend Stocks:", overall_sharpe_stock, "\n")
+cat("Sharpe Ratio of Dividend Factor:", sharpe_div, "\n")
+```
+
+
+#### Performance Comparison Growth Strategy
+```{r}
+# 5. Visual Representation
+cumulative_div_stocks <- t(apply(div_stock_returns + 1, 1, cumprod)) - 1
+overall_cumulative_stock <- rowMeans(cumulative_div_stocks)
+
+cumulative_div <- cumprod(1 + div_returns$dailyReturn) - 1
+
+plot(overall_cumulative_stock, type = "l", col = "blue", ylim = c(min(c(overall_cumulative_stock, cumulative_div, cumulative_snp)), max(c(overall_cumulative_stock, cumulative_div, cumulative_snp))), xlab = "Time", ylab = "Cumulative Return", main = "Performance Comparison")
+lines(cumulative_div, col = "red")
+lines(cumulative_snp, col = "green")
+legend("topright", legend = c("Top 50 Dividend Stocks", "Dividend Factor", "S&P 500"), fill = c("blue", "red", "green"))
+
+# Print results
+cat("Average Return of Top 50 Dividend Stocks:", overall_avg_div_stock_returns, "\n")
+cat("Average Return of Dividend Factor:", avg_div_return, "\n")
+cat("Average Return of S&P 500:", avg_snp_return, "\n")
+```
+
+### Growth Stocks Rolling Volitality Stocks
+```{r}
+portfolio_div_daily_returns <- rowSums(div_stock_returns) / 50
+
+# Perform the t-test
+t_test <- t.test(portfolio_div_daily_returns, div_returns$dailyReturn)
+cat("T-test Results:", t_test$p.value, "\n")
+
+# Calculate rolling standard deviation (volatility) for a window of, say, 5 days (you can adjust this)
+rolling_volatility_portfolio <- rollapply(portfolio_div_daily_returns, width = 5, FUN = sd, align = "right", fill = NA)
+rolling_volatility_div <- rollapply(div_returns$dailyReturn, width = 5, FUN = sd, align = "right", fill = NA)
+
+# Plot the volatilities
+plot(rolling_volatility_portfolio, type = "l", col = "blue", 
+     ylim = c(min(c(rolling_volatility_portfolio, rolling_volatility_div), na.rm = TRUE), 
+         max(c(rolling_volatility_portfolio, rolling_volatility_div), na.rm = TRUE))
+,
+     xlab = "Time", ylab = "Volatility", main = "Volatility Comparison")
+lines(rolling_volatility_div, col = "red")
+legend("topright", legend = c("Top 50 Dividend Stocks", "Dividend Factor"), fill = c("blue", "red"))
+```
+
+```{r}
+combined_returns <- data.frame(
+  Top50DivStocks = portfolio_div_daily_returns,
+  DivFactor = div_returns$dailyReturn,
+  SNP500 = snp_returns$dailyReturn
+)
+
+cor_matrix <- cor(combined_returns, use = "complete.obs")
+print(cor_matrix)
+# Create the correlation plot
+corrplot(cor_matrix, method = "circle")
+```
+
+
+### Sharpe Ratio Financial Strategy
+
+```{r echo=FALSE}
+# 1. Calculate Average Return for each stock and then the overall average for top 100 stocks
+fin_stock_returns <- fin_stock_returns[,-(1:1)]
+avg_fin_stock_returns <- colMeans(fin_stock_returns, na.rm = TRUE)
+overall_avg_fin_stock_returns <- mean(avg_fin_stock_returns)
+
+
+
+avg_fin_return <- mean(fin_returns$dailyReturn, na.rm = TRUE)
+
+# 3. Risk-Adjusted Performance (Sharpe Ratio)
+# Assuming a risk-free rate of 0.001 (0.1% monthly, but you can adjust this)
+risk_free_rate <- 0.001
+
+sharpe_fin_stocks <- (avg_fin_stock_returns - risk_free_rate) / apply(fin_stock_returns, 2, sd, na.rm = TRUE)
+overall_sharpe_stock <- mean(sharpe_fin_stocks)
+
+sharpe_fin <- (avg_fin_return - risk_free_rate) / sd(fin_returns$dailyReturn, na.rm = TRUE)
+
+cat("Sharpe Ratio of Top 50 Financial Stocks:", overall_sharpe_stock, "\n")
+cat("Sharpe Ratio of Financial Factor:", sharpe_fin, "\n")
+```
+
+
+#### Performance Comparison Financial Strategy
+```{r}
+# 5. Visual Representation
+cumulative_fin_stocks <- t(apply(fin_stock_returns + 1, 1, cumprod)) - 1
+overall_cumulative_stock <- rowMeans(cumulative_fin_stocks)
+
+cumulative_fin <- cumprod(1 + fin_returns$dailyReturn) - 1
+
+plot(overall_cumulative_stock, type = "l", col = "blue", ylim = c(min(c(overall_cumulative_stock, cumulative_fin, cumulative_snp)), max(c(overall_cumulative_stock, cumulative_fin, cumulative_snp))), xlab = "Time", ylab = "Cumulative Return", main = "Performance Comparison")
+lines(cumulative_fin, col = "red")
+lines(cumulative_snp, col = "green")
+legend("topright", legend = c("Top 50 Financial Stocks", "Financial Factor", "S&P 500"), fill = c("blue", "red", "green"))
+
+# Print results
+cat("Average Return of Top 50 Financial Stocks:", overall_avg_fin_stock_returns, "\n")
+cat("Average Return of Financial Factor:", avg_fin_return, "\n")
+cat("Average Return of S&P 500:", avg_snp_return, "\n")
+```
+
+### Financials Stocks Rolling Volitality Stocks
+```{r}
+portfolio_fin_daily_returns <- rowSums(fin_stock_returns) / 50
+
+# Perform the t-test
+t_test <- t.test(portfolio_fin_daily_returns, fin_returns$dailyReturn)
+cat("T-test Results:", t_test$p.value, "\n")
+
+# Calculate rolling standard deviation (volatility) for a window of, say, 5 days (you can adjust this)
+rolling_volatility_portfolio <- rollapply(portfolio_fin_daily_returns, width = 5, FUN = sd, align = "right", fill = NA)
+rolling_volatility_fin <- rollapply(fin_returns$dailyReturn, width = 5, FUN = sd, align = "right", fill = NA)
+
+# Plot the volatilities
+plot(rolling_volatility_portfolio, type = "l", col = "blue", 
+     ylim = c(min(c(rolling_volatility_portfolio, rolling_volatility_fin), na.rm = TRUE), 
+         max(c(rolling_volatility_portfolio, rolling_volatility_fin), na.rm = TRUE))
+,
+     xlab = "Time", ylab = "Volatility", main = "Volatility Comparison")
+lines(rolling_volatility_fin, col = "red")
+legend("topright", legend = c("Top 50 Financial Stocks", "Financial Factor"), fill = c("blue", "red"))
+```
+
+```{r}
+combined_returns <- data.frame(
+  Top50FinStocks = portfolio_fin_daily_returns,
+  FinFactor = fin_returns$dailyReturn,
+  SNP500 = snp_returns$dailyReturn
+)
+cor_matrix <- cor(combined_returns, use = "complete.obs")
+print(cor_matrix)
+# Create the correlation plot
+corrplot(cor_matrix, method = "circle")
+
+```
+
+
+### Sharpe Ratio capital Creation/Stability Strategy
+
+```{r echo=FALSE}
+# 1. Calculate Average Return for each stock and then the overall average for top 100 stocks
+cap_stock_returns <- cap_stock_returns[,-(1:1)]
+avg_cap_stock_returns <- colMeans(cap_stock_returns, na.rm = TRUE)
+overall_avg_cap_stock_returns <- mean(avg_cap_stock_returns)
+
+
+
+avg_cap_return <- mean(cap_returns$dailyReturn, na.rm = TRUE)
+
+# 3. Risk-Adjusted Performance (Sharpe Ratio)
+# Assuming a risk-free rate of 0.001 (0.1% monthly, but you can adjust this)
+risk_free_rate <- 0.001
+
+sharpe_cap_stocks <- (avg_cap_stock_returns - risk_free_rate) / apply(cap_stock_returns, 2, sd, na.rm = TRUE)
+overall_sharpe_stock <- mean(sharpe_cap_stocks)
+
+sharpe_cap <- (avg_cap_return - risk_free_rate) / sd(cap_returns$dailyReturn, na.rm = TRUE)
+
+cat("Sharpe Ratio of Top 50 Quality Stocks:", overall_sharpe_stock, "\n")
+cat("Sharpe Ratio of Financial Factor:", sharpe_cap, "\n")
+```
+
+
+#### Performance Comparison Capital Creation/Stabilty Strategy
+```{r}
+# 5. Visual Representation
+cumulative_cap_stocks <- t(apply(cap_stock_returns + 1, 1, cumprod)) - 1
+overall_cumulative_stock <- rowMeans(cumulative_cap_stocks)
+
+cumulative_cap <- cumprod(1 + cap_returns$dailyReturn) - 1
+
+plot(overall_cumulative_stock, type = "l", col = "blue", ylim = c(min(c(overall_cumulative_stock, cumulative_cap, cumulative_snp)), max(c(overall_cumulative_stock, cumulative_cap, cumulative_snp))), xlab = "Time", ylab = "Cumulative Return", main = "Performance Comparison")
+lines(cumulative_cap, col = "red")
+lines(cumulative_snp, col = "green")
+legend("topright", legend = c("Top 50 Stabilty Stocks", "Quality Factor", "S&P 500"), fill = c("blue", "red", "green"))
+
+# Print results
+cat("Average Return of Top 50 Stability Stocks:", overall_avg_cap_stock_returns, "\n")
+cat("Average Return of Quality Factor:", avg_cap_return, "\n")
+cat("Average Return of S&P 500:", avg_snp_return, "\n")
+```
+
+### Quality Stocks Rolling Volitality Stocks
+```{r}
+portfolio_cap_daily_returns <- rowSums(cap_stock_returns) / 50
+
+# Perform the t-test
+t_test <- t.test(portfolio_cap_daily_returns, cap_returns$dailyReturn)
+cat("T-test Results:", t_test$p.value, "\n")
+
+# Calculate rolling standard deviation (volatility) for a window of, say, 5 days (you can adjust this)
+rolling_volatility_portfolio <- rollapply(portfolio_cap_daily_returns, width = 5, FUN = sd, align = "right", fill = NA)
+rolling_volatility_cap <- rollapply(cap_returns$dailyReturn, width = 5, FUN = sd, align = "right", fill = NA)
+
+# Plot the volatilities
+plot(rolling_volatility_portfolio, type = "l", col = "blue", 
+     ylim = c(min(c(rolling_volatility_portfolio, rolling_volatility_cap), na.rm = TRUE), 
+         max(c(rolling_volatility_portfolio, rolling_volatility_cap), na.rm = TRUE))
+,
+     xlab = "Time", ylab = "Volatility", main = "Volatility Comparison")
+lines(rolling_volatility_cap, col = "red")
+legend("topright", legend = c("Top 50 Stability Stocks", "Quality Factor"), fill = c("blue", "red"))
+```
+
+```{r}
+combined_returns <- data.frame(
+  Top50QualityStocks = portfolio_cap_daily_returns,
+  QualityFactor = cap_returns$dailyReturn,
+  SNP500 = snp_returns$dailyReturn
+)
+cor_matrix <- cor(combined_returns, use = "complete.obs")
+print(cor_matrix)
+# Create the correlation plot
+corrplot(cor_matrix, method = "circle")
+```
